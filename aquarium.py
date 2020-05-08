@@ -3,7 +3,17 @@
 import os
 import enum
 import random
+from typing import Tuple
 import tkinter as tk
+
+
+class Asset:
+
+    DIRECTORY = 'assets'
+
+    @classmethod
+    def path(cls, file: str) -> str:
+        return os.path.join(cls.DIRECTORY, file)
 
 
 class Window(tk.Tk):
@@ -23,22 +33,72 @@ class Window(tk.Tk):
         canvas.create_image(0, 0, image=self._bg, anchor=tk.NW)
         canvas.pack(expand=tk.YES, fill=tk.BOTH)
 
-        fish = Fish(canvas, 0, 0)
+        fish = Fish(canvas)
         fish.swim()
 
         self.mainloop()
 
 
+class CustomEnum(enum.Enum):
+
+    def __str__(self):
+        return self.name.lower()
+
+    @classmethod
+    def random(cls):
+        return random.choice(list(cls))
+
+
 @enum.unique
-class Direction(enum.Enum):
+class Region(CustomEnum):
+
+    TOP_LEFT = enum.auto()
+    TOP_CENTER = enum.auto()
+    TOP_RIGHT = enum.auto()
+
+    MIDDLE_LEFT = enum.auto()
+    MIDDLE_CENTER = enum.auto()
+    MIDDLE_RIGHT = enum.auto()
+
+    BOTTOM_LEFT = enum.auto()
+    BOTTOM_CENTER = enum.auto()
+    BOTTOM_RIGHT = enum.auto()
+
+    def x_part(self) -> str:
+        ''' Returns LEFT, CENTER, or RIGHT. '''
+        return self.name.split('_')[1]
+
+    def y_part(self) -> str:
+        ''' Return TOP, MIDDLE, or BOTTOM. '''
+        return self.name.split('_')[0]
+
+    def rand_coords(self, width, height) -> Tuple[int, int]:
+        ''' Return random coordinates for this region. '''
+        x_step = width // 3
+        y_step = height // 3
+
+        ranges = {
+            'LEFT':   (0, x_step),
+            'CENTER': (x_step, x_step * 2),
+            'RIGHT':  (x_step * 2, x_step * 3),
+            'TOP':    (0, y_step),
+            'MIDDLE': (y_step, y_step * 2),
+            'BOTTOM': (y_step * 2, y_step * 3),
+        }
+
+        x_range = ranges[self.x_part()]
+        y_range = ranges[self.y_part()]
+
+        return (random.randint(*x_range), random.randint(*y_range))
+
+
+@enum.unique
+class Direction(CustomEnum):
 
     WEST = enum.auto()
     EAST = enum.auto()
     NORTH = enum.auto()
     SOUTH = enum.auto()
-
-    def __str__(self):
-        return self.name.lower()
 
     @classmethod
     def hrandom(cls) -> 'Direction':
@@ -50,19 +110,6 @@ class Direction(enum.Enum):
         ''' v -vertical. '''
         return random.choice([cls.NORTH, cls.SOUTH])
 
-    @classmethod
-    def random(cls) -> 'Direction':
-        return random.choice(list(cls))
-
-
-class Asset:
-
-    DIRECTORY = 'assets'
-
-    @classmethod
-    def path(cls, file: str) -> str:
-        return os.path.join(cls.DIRECTORY, file)
-
 
 class BorderCollisionError(Exception):
     pass
@@ -70,36 +117,32 @@ class BorderCollisionError(Exception):
 
 class Fish:
 
-    def __init__(self, canvas, x=0, y=0, direction=Direction.hrandom()):
+    def __init__(self, canvas):
         self._canvas = canvas
-        self._direction = direction
-        self._image = tk.PhotoImage(file=Asset.path(f'fish-{direction}.png'))
-        self._id = canvas.create_image(x, y, image=self._image, anchor=tk.NW)
-        self._x = x
-        self._y = y
-        self._x_max = self._canvas.winfo_reqwidth() - self._image.width()
-        self._y_max = self._canvas.winfo_reqheight() - self._image.height()
+        self._region = Region.random()
+        self._direction = Direction.random()
         self._velocity = 5
         self._update_time = 100
+        file = Asset.path(f'fish-{self._direction}.png')
+        self._image = tk.PhotoImage(file=file)
+        self._x_max = self._canvas.winfo_reqwidth() - self._image.width()
+        self._y_max = self._canvas.winfo_reqheight() - self._image.height()
+        self._x, self._y = self._region.rand_coords(self._x_max, self._y_max)
+        self._id = self._canvas.create_image(
+            self._x, self._y, image=self._image, anchor=tk.NW
+        )
 
     @property
     def image(self) -> tk.PhotoImage:
         return self._image
 
-    @image.setter
-    def image(self, file: str):
-        self._image = tk.PhotoImage(file=Asset.path(file))
-        self._canvas.itemconfig(self._id, image=self._image)
-
     @property
     def direction(self) -> 'Direction':
         return self._direction
 
-    @direction.setter
-    def direction(self, direction: 'Direction'):
-        '''  '''
-        self._direction = direction
-        self.image = f'fish-{self._direction}.png'
+    @property
+    def region(self) -> 'Region':
+        return self._region
 
     @property
     def x(self) -> int:
@@ -112,6 +155,18 @@ class Fish:
     @property
     def update_time(self) -> int:
         return self._update_time
+
+    @image.setter
+    def image(self, file: str):
+        ''' Change fish image on the canvas. '''
+        self._image = tk.PhotoImage(file=file)
+        self._canvas.itemconfig(self._id, image=self._image)
+
+    @direction.setter
+    def direction(self, direction: 'Direction'):
+        ''' Change fish direction and it's image respectively. '''
+        self._direction = direction
+        self.image = Asset.path(f'fish-{self._direction}.png')
 
     def swim(self):
         '''  '''
