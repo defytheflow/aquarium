@@ -45,8 +45,9 @@ class CustomEnum(enum.Enum):
         return self.name.lower()
 
     @classmethod
-    def random(cls):
-        return random.choice(list(cls))
+    def random(cls, exclude: 'CustomEnum' = None):
+        choices = set(list(cls)) - set([exclude]) if exclude else list(cls)
+        return random.choice(list(choices))
 
 
 @enum.unique
@@ -173,13 +174,16 @@ class Fish:
         try:
             self.swim_forward()
         except BorderCollisionError:
-            self.direction = Direction.random()
+            self.direction = Direction.random(exclude=self._direction)
 
         self._canvas.after(self._update_time, self.swim)
 
+    def _update_position(self):
+        self._x, self._y = self._canvas.coords(self._id)
+
     def swim_forward(self):
         '''  '''
-        self._x, self._y = self._canvas.coords(self._id)
+        self._update_position()
 
         border_collision = {
             Direction.WEST:  self._x < 0,
