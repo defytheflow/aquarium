@@ -1,164 +1,150 @@
 #!/usr/bin/python3
 
 import os
-from enum import Enum
+import enum
 import random
 import tkinter as tk
 
 
-BG_IMAGE_FILENAME = os.path.join('assets', 'bg.png')
-FISH_IMAGE_FILENAME = os.path.join('assets', 'fish_west.png')
+class Window(tk.Tk):
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-class Window:
+        self._bg = tk.PhotoImage(file=Asset.path('bg.png'))
+        self._width = 800
+        self._height = 600
 
-    TITLE = 'Aquarium'
-    WIDTH, HEIGHT = 800, 600
+        self.title('Aquarium')
+        self.resizable(0, 0)
+        self.geometry(f'{self._width}x{self._height}')
 
-    def __init__(self):
-        self._master = self._create_master()
-        self._canvas = self._create_canvas()
-
-        self._bg = CanvasImage(self._canvas, 0, 0, BG_IMAGE_FILENAME)
-        self._fish = Fish(self._canvas, 300, 250, FISH_IMAGE_FILENAME)
-
-        self._fish.move()
-        self._master.mainloop()
-
-    def _create_master(self) -> tk.Tk:
-        ''' Configure and return an instance of 'tk.Tk'. '''
-        master = tk.Tk()
-        master.title(self.TITLE)
-        master.resizable(width=False, height=False)
-        master.geometry(f'{self.WIDTH}x{self.HEIGHT}')
-        return master
-
-    def _create_canvas(self) -> tk.Canvas:
-        ''' Configure and return an instance of 'tk.Canvas'. '''
-        canvas = tk.Canvas(self._master, width=self.WIDTH, height=self.HEIGHT)
+        canvas = tk.Canvas(self, width=self._width, height=self._height)
+        canvas.create_image(0, 0, image=self._bg, anchor=tk.NW)
         canvas.pack(expand=tk.YES, fill=tk.BOTH)
-        return canvas
+
+        fish = Fish(canvas, 0, 0)
+        fish.swim()
+
+        self.mainloop()
 
 
-class CanvasImage:
+@enum.unique
+class Direction(enum.Enum):
 
-    def __init__(self, canvas, x, y, filename):
+    WEST = enum.auto()
+    EAST = enum.auto()
+    NORTH = enum.auto()
+    SOUTH = enum.auto()
+
+    def __str__(self):
+        return self.name.lower()
+
+    @classmethod
+    def hrandom(cls) -> 'Direction':
+        ''' h - horizontal. '''
+        return random.choice([cls.WEST, cls.EAST])
+
+    @classmethod
+    def vrandom(cls) -> 'Direction':
+        ''' v -vertical. '''
+        return random.choice([cls.NORTH, cls.SOUTH])
+
+    @classmethod
+    def random(cls) -> 'Direction':
+        return random.choice(list(cls))
+
+
+class Asset:
+
+    DIRECTORY = 'assets'
+
+    @classmethod
+    def path(cls, file: str) -> str:
+        return os.path.join(cls.DIRECTORY, file)
+
+
+class BorderCollisionError(Exception):
+    pass
+
+
+class Fish:
+
+    def __init__(self, canvas, x=0, y=0, direction=Direction.hrandom()):
         self._canvas = canvas
+        self._direction = direction
+        self._image = tk.PhotoImage(file=Asset.path(f'fish-{direction}.png'))
+        self._id = canvas.create_image(x, y, image=self._image, anchor=tk.NW)
         self._x = x
         self._y = y
-        self._image = tk.PhotoImage(file=filename)
         self._x_max = self._canvas.winfo_reqwidth() - self._image.width()
         self._y_max = self._canvas.winfo_reqheight() - self._image.height()
-        self._item_id = self._canvas.create_image(
-            self._x, self._y, image=self._image, anchor=tk.NW
-        )
+        self._velocity = 5
+        self._update_time = 100
 
+    @property
+    def image(self) -> tk.PhotoImage:
+        return self._image
 
-class Direction(Enum):
+    @image.setter
+    def image(self, file: str):
+        self._image = tk.PhotoImage(file=Asset.path(file))
+        self._canvas.itemconfig(self._id, image=self._image)
 
-    WEST = 0
-    EAST = 1
-    NORTH = 2
-    SOUTH = 3
-    NORTH_WEST = 4
-    NORTH_EAST = 5
-    SOUTH_WEST = 6
-    SOUTH_EAST = 7
+    @property
+    def direction(self) -> 'Direction':
+        return self._direction
 
-    @classmethod
-    def list(cls) -> list:
-        return [
-            cls.WEST, cls.EAST, cls.NORTH, cls.SOUTH, cls.NORTH_WEST,
-            cls.NORTH_EAST, cls.SOUTH_WEST, cls.SOUTH_EAST
-        ]
-
-    @classmethod
-    def random(cls) -> int:
-        return random.choice(cls.list())
-
-
-class Fish(CanvasImage):
-
-    DIRECTIONS = Direction.list()
-
-    def __init__(self, canvas, x, y, filename):
-        super().__init__(canvas, x, y, filename)
-
-        self._velocity = 6
-        self._update_time = 90
-
-        self._direction = Direction.WEST
-        self._prev_direction = None
-
-    def set_image(self, filename):
-        self._image = tk.PhotoImage(file=filename)
-        self._canvas.itemconfig(self._item_id, image=self._image)
-
-    def _can_move_forward(self):
+    @direction.setter
+    def direction(self, direction: 'Direction'):
         '''  '''
-        if self._direction == Direction.NORTH:
-            return self._y > 0
+        self._direction = direction
+        self.image = f'fish-{self._direction}.png'
 
-        elif self._direction == Direction.SOUTH:
-            return self._y < self._y_max
+    @property
+    def x(self) -> int:
+        return self._x
 
-        elif self._direction == Direction.EAST:
-            return self._x < self._x_max
+    @property
+    def y(self) -> int:
+        return self._y
 
-        elif self._direction == Direction.WEST:
-            return self._x > 0
+    @property
+    def update_time(self) -> int:
+        return self._update_time
 
-        elif self._direction == Direction.NORTH_WEST:
-            return self._y > 0 and self._x > 0
-
-        elif self._direction == Direction.NORTH_EAST:
-            return self._y > 0 and self._x < self._x_max
-
-        elif self._direction == Direction.SOUTH_WEST:
-            return self._x > 0 and self._y < self._y_max
-
-        elif self._direction == Direction.SOUTH_EAST:
-            return self._x < self._x_max and self._y < self._y_max
-
-    def _move_forward(self):
+    def swim(self):
         '''  '''
-        if self._direction == Direction.NORTH:
-            self._canvas.move(self._item_id, 0, -self._velocity)
+        try:
+            self.swim_forward()
+        except BorderCollisionError:
+            self.direction = Direction.random()
 
-        elif self._direction == Direction.SOUTH:
-            self._canvas.move(self._item_id, 0, self._velocity)
+        self._canvas.after(self._update_time, self.swim)
 
-        elif self._direction == Direction.EAST:
-            self._canvas.move(self._item_id, self._velocity, 0)
-
-        elif self._direction == Direction.WEST:
-            self._canvas.move(self._item_id, -self._velocity, 0)
-
-        elif self._direction == Direction.NORTH_WEST:
-            self._canvas.move(self._item_id, -self._velocity, -self._velocity)
-
-        elif self._direction == Direction.NORTH_EAST:
-            self._canvas.move(self._item_id, self._velocity, -self._velocity)
-
-        elif self._direction == Direction.SOUTH_WEST:
-            self._canvas.move(self._item_id, -self._velocity, self._velocity)
-
-        elif self._direction == Direction.SOUTH_EAST:
-            self._canvas.move(self._item_id, self._velocity, self._velocity)
-
-        filename = f'fish_{self._direction.name.lower()}.png'
-        self.set_image(os.path.join('assets', filename))
-
-    def move(self):
+    def swim_forward(self):
         '''  '''
-        self._x, self._y = self._canvas.coords(self._item_id)
+        self._x, self._y = self._canvas.coords(self._id)
 
-        if self._can_move_forward():
-            self._move_forward()
-        else:
-            self._direction = Direction.random()
+        border_collision = {
+            Direction.WEST:  self._x < 0,
+            Direction.EAST:  self._x > self._x_max,
+            Direction.NORTH: self._y < 0,
+            Direction.SOUTH: self._y > self._y_max,
+        }
 
-        self._canvas.after(self._update_time, self.move)
+        if border_collision[self._direction]:
+            raise BorderCollisionError()
+
+        offset = {
+            Direction.WEST:  (-self._velocity, 0),
+            Direction.EAST:  (self._velocity,  0),
+            Direction.NORTH: (0, -self._velocity),
+            Direction.SOUTH: (0,  self._velocity),
+        }
+
+        off_x, off_y = offset[self._direction]
+        self._canvas.move(self._id, off_x, off_y)
 
 
 if __name__ == '__main__':
