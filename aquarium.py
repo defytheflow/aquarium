@@ -6,26 +6,45 @@ import random
 import typing
 import tkinter as tk
 
+from PIL import ImageTk, Image
+
 
 class Window(tk.Tk):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._bg = tk.PhotoImage(file=os.path.join('assets', 'bg.png'))
         self._width = 800
         self._height = 600
+        self._canvas = tk.Canvas(self, width=self._width, height=self._height)
+        self._fish = Fish(self._canvas)
+        self._bg = None
+        self._bg_id = None
+
         self.title('Aquarium')
+        self.set_bg(random.choice(['bg-1.png', 'bg-2.jpg', 'bg-3.jpg']))
         self.resizable(0, 0)
         self.geometry(f'{self._width}x{self._height}')
+        self._fish.swim()
 
-        canvas = tk.Canvas(self, width=self._width, height=self._height)
-        canvas.create_image(0, 0, image=self._bg, anchor=tk.NW)
-        canvas.pack(expand=tk.YES, fill=tk.BOTH)
+        menu_bar = tk.Menu(self)
 
-        fish = Fish(canvas)
-        fish.swim()
+        bg_menu = tk.Menu(menu_bar, tearoff=0)
+        bg_menu.add_radiobutton(label='First', command=lambda: self.set_bg('bg-1.png'))
+        bg_menu.add_radiobutton(label='Second', command=lambda: self.set_bg('bg-2.jpg'))
+        bg_menu.add_radiobutton(label='Third', command=lambda: self.set_bg('bg-3.jpg'))
 
+        menu_bar.add_cascade(label='Background', menu=bg_menu)
+
+        self._canvas.pack(expand=tk.YES, fill=tk.BOTH)
+        self.config(menu=menu_bar)
         self.mainloop()
+
+    def set_bg(self, file: str):
+        if self._bg:
+            self._canvas.delete(self._bg_id)
+        self._bg = ImageTk.PhotoImage(Image.open(os.path.join('assets', file)))
+        self._bg_id = self._canvas.create_image(0, 0, image=self._bg, anchor=tk.NW)
+        self._fish.repaint()
 
 
 @enum.unique
@@ -61,20 +80,20 @@ class BorderCollisionError(Exception):
 
 
 @enum.unique
-class YRegion(enum.Enum):
-    TOP = enum.auto()
-    MIDDLE = enum.auto()
-    BOTTOM = enum.auto()
+class XRegion(enum.Enum):
+    LEFT = enum.auto()
+    CENTER = enum.auto()
+    RIGHT = enum.auto()
 
     def __str__(self):
         return self.name.lower()
 
 
 @enum.unique
-class XRegion(enum.Enum):
-    LEFT = enum.auto()
-    CENTER = enum.auto()
-    RIGHT = enum.auto()
+class YRegion(enum.Enum):
+    TOP = enum.auto()
+    MIDDLE = enum.auto()
+    BOTTOM = enum.auto()
 
     def __str__(self):
         return self.name.lower()
@@ -93,6 +112,20 @@ class Fish:
         self._x_region, self._y_region = self._get_xy_regions()
         self._velocity = 5
         self._update_time = 100
+
+    def repaint(self):
+        self._canvas.delete(self._id)
+        self._id = self._canvas.create_image(self._x, self._y, image=self._image, anchor=tk.NW)
+
+    def swim(self):
+        """ """
+        try:
+            self._swim_forward()
+        except BorderCollisionError:
+            self._bounce_back()
+            self._change_direction()
+
+        self._canvas.after(self._update_time, self.swim)
 
     def _get_image_file(self) -> str:
         """ Returns name of the image file depending on current direction and x_region. """
@@ -135,16 +168,6 @@ class Fish:
             else:
                 self._direction = Direction.random(exclude=[self._direction, Direction.EAST])
         self._change_image()
-
-    def swim(self):
-        """ """
-        try:
-            self._swim_forward()
-        except BorderCollisionError:
-            self._bounce_back()
-            self._change_direction()
-
-        self._canvas.after(self._update_time, self.swim)
 
     def _swim_forward(self):
         """ Swim towards current direction. """
