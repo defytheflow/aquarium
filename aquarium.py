@@ -3,10 +3,17 @@
 import os
 import enum
 import random
-import typing
+from typing import Tuple
 import tkinter as tk
 
 from PIL import ImageTk, Image
+
+
+class ImageLoader:
+
+    @staticmethod
+    def load(path: str) -> tk.PhotoImage:
+        return ImageTk.PhotoImage(Image.open(path))
 
 
 class Window(tk.Tk):
@@ -15,36 +22,48 @@ class Window(tk.Tk):
         super().__init__(*args, **kwargs)
         self._width = 800
         self._height = 600
-        self._canvas = tk.Canvas(self, width=self._width, height=self._height)
-        self._fish = Fish(self._canvas)
-        self._bg = None
-        self._bg_id = None
 
-        self.title('Aquarium')
-        self.set_bg(random.choice(['bg-1.png', 'bg-2.jpg', 'bg-3.jpg']))
-        self.resizable(0, 0)
-        self.geometry(f'{self._width}x{self._height}')
+        self._canvas = tk.Canvas(self, width=self._width, height=self._height)
+        self._canvas.pack(expand=tk.YES, fill=tk.BOTH)
+
+        self._fish = Fish(self._canvas, 'blue')
         self._fish.swim()
 
-        menu_bar = tk.Menu(self)
+        self._bg = None
+        self._bg_id = None
+        self._bg_images = os.listdir(os.path.join('assets', 'bg'))
+        self.set_bg(random.choice(self._bg_images))
 
-        bg_menu = tk.Menu(menu_bar, tearoff=0)
-        bg_menu.add_radiobutton(label='First', command=lambda: self.set_bg('bg-1.png'))
-        bg_menu.add_radiobutton(label='Second', command=lambda: self.set_bg('bg-2.jpg'))
-        bg_menu.add_radiobutton(label='Third', command=lambda: self.set_bg('bg-3.jpg'))
+        self.title('Aquarium')
+        self.resizable(0, 0)
+        self.geometry(f'{self._width}x{self._height}')
 
-        menu_bar.add_cascade(label='Background', menu=bg_menu)
+        self.menu = tk.Menu(self)
+        self.menu.add_cascade(label='Fish', menu=self._create_fish_menu())
+        self.menu.add_cascade(label='Background', menu=self._create_bg_menu())
+        self.config(menu=self.menu)
 
-        self._canvas.pack(expand=tk.YES, fill=tk.BOTH)
-        self.config(menu=menu_bar)
         self.mainloop()
 
     def set_bg(self, file: str):
         if self._bg:
             self._canvas.delete(self._bg_id)
-        self._bg = ImageTk.PhotoImage(Image.open(os.path.join('assets', file)))
+        self._bg = ImageLoader.load(os.path.join('assets', 'bg', file))
         self._bg_id = self._canvas.create_image(0, 0, image=self._bg, anchor=tk.NW)
         self._fish.repaint()
+
+    def _create_bg_menu(self) -> tk.Menu:
+        menu = tk.Menu(self.menu, tearoff=0)
+        menu.add_radiobutton(label='First', command=lambda: self.set_bg('1.png'))
+        menu.add_radiobutton(label='Second', command=lambda: self.set_bg('2.jpg'))
+        menu.add_radiobutton(label='Third', command=lambda: self.set_bg('3.jpg'))
+        return menu
+
+    def _create_fish_menu(self) -> tk.Menu:
+        menu = tk.Menu(self.menu, tearoff=0)
+        menu.add_radiobutton(label='Blue', command=lambda: self._fish.set_sprite('blue'))
+        menu.add_radiobutton(label='Yellow', command=lambda: self._fish.set_sprite('yellow'))
+        return menu
 
 
 @enum.unique
@@ -65,7 +84,7 @@ class Direction(enum.Enum):
         return self in [self.NORTH, self.SOUTH]
 
     @classmethod
-    def random_horizontal(cls):
+    def get_random_horizontal(cls):
         return random.choice([cls.WEST, cls.EAST])
 
     @classmethod
@@ -88,6 +107,15 @@ class XRegion(enum.Enum):
     def __str__(self):
         return self.name.lower()
 
+    @classmethod
+    def get(cls, x, x_bound):
+        if 0 <= x <= x_bound // 3:
+            return cls.LEFT
+        elif x_bound // 3 <= x <= x_bound // 3 * 2:
+            return cls.CENTER
+        else:
+            return cls.RIGHT
+
 
 @enum.unique
 class YRegion(enum.Enum):
@@ -98,24 +126,44 @@ class YRegion(enum.Enum):
     def __str__(self):
         return self.name.lower()
 
+    @classmethod
+    def get(cls, y, y_bound):
+        if 0 <= y <= y_bound // 3:
+            return cls.TOP
+        elif y_bound // 3 <= y <= y_bound // 3 * 2:
+            return cls.MIDDLE
+        else:
+            return cls.BOTTOM
+
 
 class Fish:
 
-    def __init__(self, canvas: tk.Canvas):
+    def __init__(self, canvas: tk.Canvas, sprite: str):
         self._canvas = canvas
-        self._direction = Direction.random_horizontal()
+        self._sprite = sprite
+
+        self._direction = Direction.get_random_horizontal()
         self._prev_direction = None
-        self._image = tk.PhotoImage(file=self._get_image_file())
-        self._x_bound, self._y_bound = self._get_xy_bounds()
-        self._x, self._y = self.get_random_coordinates(self._x_bound, self._y_bound)
-        self._id = self._canvas.create_image(self._x, self._y, image=self._image, anchor=tk.NW)
-        self._x_region, self._y_region = self._get_xy_regions()
+
+        self._image = ImageLoader.load(self._get_image_path())
+        self._x_max, self._y_max = self.get_max_xy(self._canvas, self._image)
+
+        self._x, self._y = self.get_random_xy((0, self._x_max), (0, self._y_max))
+        self._image_id = self._canvas.create_image(self._x, self._y, image=self._image, anchor=tk.NW)
+
         self._velocity = 5
         self._update_time = 100
 
+    def set_sprite(self, new_sprite: str):
+        """ Change this fish sprite. """
+        self._sprite = new_sprite
+        self.repaint()
+
     def repaint(self):
-        self._canvas.delete(self._id)
-        self._id = self._canvas.create_image(self._x, self._y, image=self._image, anchor=tk.NW)
+        """ Called by Window to repaint fish above the changed background. """
+        self._canvas.delete(self._image_id)
+        self._image = ImageLoader.load(self._get_image_path())
+        self._image_id = self._canvas.create_image(self._x, self._y, image=self._image, anchor=tk.NW)
 
     def swim(self):
         """ """
@@ -127,28 +175,20 @@ class Fish:
 
         self._canvas.after(self._update_time, self.swim)
 
-    def _get_image_file(self) -> str:
-        """ Returns name of the image file depending on current direction and x_region. """
-        if self._direction.is_vertical():
-            file = f'fish-{self._direction}-{self._x_region}.png'
-        else:
-            file = f'fish-{self._direction}.png'
-        return os.path.join('assets', file)
-
     def _change_image(self):
         """ Change fish image on the canvas. """
-        self._canvas.delete(self._id)
-        self._image = tk.PhotoImage(file=self._get_image_file())
-        self._x_bound, self._y_bound = self._get_xy_bounds()
+        self._canvas.delete(self._image_id)
+        self._image = tk.PhotoImage(file=self._get_image_path())
+        self._x_max, self._y_max = self.get_max_xy(self._canvas, self._image)
         if self._prev_direction is Direction.WEST:
             self._x = 0
         elif self._prev_direction is Direction.EAST:
-            self._x = self._x_bound
+            self._x = self._x_max
         elif self._prev_direction is Direction.NORTH:
             self._y = 0
         else:
-            self._y = self._y_bound
-        self._id = self._canvas.create_image(self._x, self._y, image=self._image, anchor=tk.NW)
+            self._y = self._y_max
+        self._image_id = self._canvas.create_image(self._x, self._y, image=self._image, anchor=tk.NW)
 
     def _change_direction(self):
         """ Change fish direction and it's image accordingly. """
@@ -177,68 +217,58 @@ class Fish:
             raise BorderCollisionError()
 
         if self._direction is Direction.WEST:
-            self._canvas.move(self._id, -self._velocity, 0)
+            self._canvas.move(self._image_id, -self._velocity, 0)
         elif self._direction is Direction.EAST:
-            self._canvas.move(self._id, self._velocity, 0)
+            self._canvas.move(self._image_id, self._velocity, 0)
         elif self._direction is Direction.NORTH:
-            self._canvas.move(self._id, 0, -self._velocity)
+            self._canvas.move(self._image_id, 0, -self._velocity)
         elif self._direction is Direction.SOUTH:
-            self._canvas.move(self._id, 0, self._velocity)
+            self._canvas.move(self._image_id, 0, self._velocity)
 
     def _update_position(self):
         """ Update current x, y coordinates and regions. """
-        self._x, self._y = self._canvas.coords(self._id)
-        self._x_region, self._y_region = self._get_xy_regions()
-        # print(f'x: {self._x}, y: {self._y}')
-        # print(f'x_max: {self._x_bound}, y_max: {self._y_bound}')
+        self._x, self._y = self._canvas.coords(self._image_id)
+        self._x_region = XRegion.get(self._x, self._x_max)
+        self._y_region = YRegion.get(self._y, self._y_max)
 
     def _collides_with_border(self) -> bool:
         """ Check if fish collides with a border in current direction. """
         if self._direction is Direction.WEST:
             return self._x < 0
         if self._direction is Direction.EAST:
-            return self._x > self._x_bound
+            return self._x > self._x_max
         if self._direction is Direction.NORTH:
             return self._y < 0
         if self._direction is Direction.SOUTH:
-            return self._y > self._y_bound
+            return self._y > self._y_max
 
     def _bounce_back(self):
         """ Bounce back after colliding with a border. """
         if self._direction is Direction.WEST:
-            self._canvas.move(self._id, self._velocity, 0)
+            self._canvas.move(self._image_id, self._velocity, 0)
         elif self._direction is Direction.EAST:
-            self._canvas.move(self._id, -self._velocity, 0)
+            self._canvas.move(self._image_id, -self._velocity, 0)
         elif self._direction is Direction.NORTH:
-            self._canvas.move(self._id, 0, self._velocity)
+            self._canvas.move(self._image_id, 0, self._velocity)
         elif self._direction is Direction.SOUTH:
-            self._canvas.move(self._id, 0, -self._velocity)
+            self._canvas.move(self._image_id, 0, -self._velocity)
         self._update_position()
 
-    def _get_xy_bounds(self) -> typing.Tuple[int, int]:
-        return self._canvas.winfo_reqwidth() - self._image.width(), \
-               self._canvas.winfo_reqheight() - self._image.height()
-
-    def _get_xy_regions(self) -> typing.Tuple[XRegion, YRegion]:
-        if 0 <= self._x <= self._x_bound // 3:
-            x_region = XRegion.LEFT
-        elif self._x_bound // 3 <= self._x <= self._x_bound // 3 * 2:
-            x_region = XRegion.CENTER
+    def _get_image_path(self) -> str:
+        """ Returns the path to the image file depending on the current direction and x region. """
+        if self._direction.is_horizontal():
+            file = f'{self._direction}.png'
         else:
-            x_region = XRegion.RIGHT
-
-        if 0 <= self._y <= self._y_bound // 3:
-            y_region = YRegion.TOP
-        elif self._y_bound // 3 <= self._y <= self._y_bound // 3 * 2:
-            y_region = YRegion.MIDDLE
-        else:
-            y_region = YRegion.BOTTOM
-
-        return x_region, y_region
+            file = f'{self._direction}-{self._x_region}.png'
+        return os.path.join('assets', 'fish', self._sprite, file)
 
     @staticmethod
-    def get_random_coordinates(width: int, height: int) -> typing.Tuple[int, int]:
-        return random.randint(0, width), random.randint(0, height)
+    def get_max_xy(canvas: tk.Canvas, image: tk.PhotoImage):  # TODO: bad name
+        return canvas.winfo_reqwidth() - image.width(), canvas.winfo_reqheight() - image.height()
+
+    @staticmethod
+    def get_random_xy(x_range: Tuple[int, int], y_range: Tuple[int, int]) -> Tuple[int, int]:
+        return random.randint(*x_range), random.randint(*y_range)
 
 
 if __name__ == '__main__':
