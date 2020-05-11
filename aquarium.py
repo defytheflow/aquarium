@@ -31,7 +31,6 @@ class Window(tk.Tk):
 @enum.unique
 class Direction(enum.Enum):
     """ Represents fish direction. """
-
     WEST = enum.auto()
     EAST = enum.auto()
     NORTH = enum.auto()
@@ -40,18 +39,16 @@ class Direction(enum.Enum):
     def __str__(self):
         return self.name.lower()
 
+    def is_horizontal(self):
+        return self in [self.WEST, self.EAST]
+
+    def is_vertical(self):
+        return self in [self.NORTH, self.SOUTH]
+
     @classmethod
-    def random(cls, exclude: 'Direction' = None):
-        choices = set(list(cls)) - {exclude} if exclude else list(cls)
+    def random(cls, exclude: list = None):
+        choices = set(list(cls)) - set(exclude) if exclude else list(cls)
         return random.choice(list(choices))
-
-    @classmethod
-    def random_horizontal(cls) -> 'Direction':
-        return random.choice([cls.WEST, cls.EAST])
-
-    @classmethod
-    def random_vertical(cls) -> 'Direction':
-        return random.choice([cls.NORTH, cls.SOUTH])
 
 
 class BorderCollisionError(Exception):
@@ -59,83 +56,132 @@ class BorderCollisionError(Exception):
     pass
 
 
+@enum.unique
+class YRegion(enum.Enum):
+    TOP = enum.auto()
+    MIDDLE = enum.auto()
+    BOTTOM = enum.auto()
+
+    def __str__(self):
+        return self.name.lower()
+
+
+@enum.unique
+class XRegion(enum.Enum):
+    LEFT = enum.auto()
+    CENTER = enum.auto()
+    RIGHT = enum.auto()
+
+    def __str__(self):
+        return self.name.lower()
+
+
 class Fish:
 
-    def __init__(self, canvas):
+    def __init__(self, canvas: tk.Canvas):
         self._canvas = canvas
         self._direction = Direction.random()
         self._image = tk.PhotoImage(file=os.path.join('assets', f'fish-{self._direction}.png'))
         self._x_max = self._canvas.winfo_reqwidth() - self._image.width()
         self._y_max = self._canvas.winfo_reqheight() - self._image.height()
         self._x, self._y = self.get_random_coordinates(self._x_max, self._y_max)
+        self._id = self._canvas.create_image(self._x, self._y, image=self._image, anchor=tk.NW)
+        self._x_region = self._get_x_region()
+        self._y_region = self._get_y_region()
         self._velocity = 5
         self._update_time = 100
-        self._id = self._canvas.create_image(self._x, self._y, image=self._image, anchor=tk.NW)
 
-    @property
-    def image(self) -> tk.PhotoImage:
-        return self._image
-
-    @property
-    def direction(self) -> Direction:
-        return self._direction
-
-    @property
-    def x(self) -> int:
-        return self._x
-
-    @property
-    def y(self) -> int:
-        return self._y
-
-    @property
-    def update_time(self) -> int:
-        return self._update_time
-
-    def set_image(self, file: str):
+    def _change_image(self, file: str):
         """ Change fish image on the canvas. """
         self._image = tk.PhotoImage(file=file)
         self._canvas.itemconfig(self._id, image=self._image)
 
-    def set_direction(self, direction: Direction):
+    def _change_direction(self):
         """ Change fish direction and it's image accordingly. """
-        self._direction = direction
-        self.set_image(os.path.join('assets', f'fish-{self._direction}.png'))
+        if self._direction.is_horizontal():
+            if self._y_region is YRegion.TOP:
+                self._direction = Direction.random(exclude=[self._direction, Direction.NORTH])
+            elif self._y_region is YRegion.MIDDLE:
+                self._direction = Direction.random(exclude=[self._direction])
+            else:
+                self._direction = Direction.random(exclude=[self._direction, Direction.SOUTH])
+        else:
+            if self._x_region is XRegion.LEFT:
+                self._direction = Direction.random(exclude=[self._direction, Direction.WEST])
+            elif self._x_region is XRegion.CENTER:
+                self._direction = Direction.random(exclude=[self._direction])
+            else:
+                self._direction = Direction.random(exclude=[self._direction, Direction.EAST])
+        self._change_image(os.path.join('assets', f'fish-{self._direction}.png'))
 
     def swim(self):
         """ """
         try:
-            self.swim_forward()
+            self._swim_forward()
         except BorderCollisionError:
-            self.set_direction(Direction.random(exclude=self._direction))
+            self._bounce_back()
+            self._change_direction()
 
         self._canvas.after(self._update_time, self.swim)
 
-    def swim_forward(self):
-        self._update_coordinates()
+    def _swim_forward(self):
+        """ Swim towards current direction. """
+        self._update_position()
 
-        border_collision = {
-            Direction.WEST:  self._x < 0,
-            Direction.EAST:  self._x > self._x_max,
-            Direction.NORTH: self._y < 0,
-            Direction.SOUTH: self._y > self._y_max,
-        }
-
-        if border_collision[self._direction]:
+        if self._collides_with_border():
             raise BorderCollisionError()
 
-        offset = {
-            Direction.WEST:  (-self._velocity, 0),
-            Direction.EAST:  (self._velocity,  0),
-            Direction.NORTH: (0, -self._velocity),
-            Direction.SOUTH: (0,  self._velocity),
-        }
+        if self._direction is Direction.WEST:
+            self._canvas.move(self._id, -self._velocity, 0)
+        elif self._direction is Direction.EAST:
+            self._canvas.move(self._id, self._velocity, 0)
+        elif self._direction is Direction.NORTH:
+            self._canvas.move(self._id, 0, -self._velocity)
+        elif self._direction is Direction.SOUTH:
+            self._canvas.move(self._id, 0, self._velocity)
 
-        off_x, off_y = offset[self._direction]
-        self._canvas.move(self._id, off_x, off_y)
-
-    def _update_coordinates(self):
+    def _update_position(self):
+        """ Update current x, y coordinates and regions. """
         self._x, self._y = self._canvas.coords(self._id)
+        self._x_region, self._y_region = self._get_x_region(), self._get_y_region()
+
+    def _collides_with_border(self) -> bool:
+        """ Check if fish collides with a border in current direction. """
+        if self._direction is Direction.WEST:
+            return self._x < 0
+        if self._direction is Direction.EAST:
+            return self._x > self._x_max
+        if self._direction is Direction.NORTH:
+            return self._y < 0
+        if self._direction is Direction.SOUTH:
+            return self._y > self._y_max
+
+    def _bounce_back(self):
+        """ Bounce back after colliding with a border. """
+        if self._direction is Direction.WEST:
+            self._canvas.move(self._id, self._velocity, 0)
+        elif self._direction is Direction.EAST:
+            self._canvas.move(self._id, -self._velocity, 0)
+        elif self._direction is Direction.NORTH:
+            self._canvas.move(self._id, 0, self._velocity)
+        elif self._direction is Direction.SOUTH:
+            self._canvas.move(self._id, 0, -self._velocity)
+
+    def _get_x_region(self) -> XRegion:
+        if 0 <= self._x <= self._x_max // 3:
+            return XRegion.LEFT
+        if self._x_max // 3 <= self._x <= self._x_max // 3 * 2:
+            return XRegion.CENTER
+        if self._x_max // 3 * 2 <= self._x <= self._x_max:
+            return XRegion.RIGHT
+
+    def _get_y_region(self) -> YRegion:
+        if 0 <= self._y <= self._y_max // 3:
+            return YRegion.TOP
+        if self._y_max // 3 <= self._y <= self._y_max // 3 * 2:
+            return YRegion.MIDDLE
+        if self._y_max // 3 * 2 <= self._y <= self._y_max:
+            return YRegion.BOTTOM
 
     @staticmethod
     def get_random_coordinates(width: int, height: int) -> typing.Tuple[int, int]:
